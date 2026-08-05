@@ -134,7 +134,7 @@ backup_repo() {
   fi
 
   write_snapshot_manifest "$full_name" "$snapshot_dir" "$default_branch" "$visibility" "$archived"
-  ln -sfn "$TIMESTAMP" "${repo_root}/latest"
+  ln -sfn "snapshots/$TIMESTAMP" "${repo_root}/latest"
   SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
   log "$full_name: snapshot complete"
   return 0
