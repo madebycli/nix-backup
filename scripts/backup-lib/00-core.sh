@@ -99,7 +99,7 @@ api_object() {
   local endpoint="$1"
   local destination="$2"
   local temporary="${destination}.tmp"
-  if gh api -H 'Accept: application/vnd.github+json' "$endpoint" > "$temporary"; then
+  if gh api -H 'Accept: application/vnd.github+json' "$endpoint" > "$temporary" 2>/dev/null; then
     jq . "$temporary" > "$destination"
     rm -f "$temporary"
     return 0
@@ -112,7 +112,7 @@ api_array() {
   local endpoint="$1"
   local destination="$2"
   local temporary="${destination}.tmp"
-  if gh api --paginate -H 'Accept: application/vnd.github+json' "$endpoint" \
+  if gh api --paginate -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null \
       | jq -s 'if length == 0 then [] elif (.[0] | type) == "array" then add else . end' \
       > "$temporary"; then
     mv "$temporary" "$destination"
@@ -147,7 +147,7 @@ api_field_array() {
   local field="$2"
   local destination="$3"
   local temporary="${destination}.tmp"
-  if gh api --paginate -H 'Accept: application/vnd.github+json' "$endpoint" \
+  if gh api --paginate -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null \
       | jq -s --arg field "$field" '[.[][$field][]?]' > "$temporary"; then
     mv "$temporary" "$destination"
     return 0
