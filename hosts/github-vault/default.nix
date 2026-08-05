@@ -62,11 +62,21 @@
 
   services.fstrim.enable = true;
 
-  # USB device 13d3:3306 is a Realtek RTL8191SU. Its in-tree r8712u staging
-  # driver still exists in Linux 6.6 but was removed from later 6.12 updates.
-  # Keep this appliance on the supported 6.6 LTS kernel while this adapter is
-  # in use. Ethernet remains available and is preferred by route metric.
+  # USB device 13d3:3306 is a Realtek RTL8191SU. Its in-tree r8712u driver
+  # exists in Linux 6.6, but NixOS disables staging drivers in its stock kernel
+  # configuration. Build Linux 6.6 with only this staging driver enabled.
+  # Ethernet remains preferred through NetworkManager route metrics.
   boot.kernelPackages = pkgs.linuxPackages_6_6;
+  boot.kernelPatches = [
+    {
+      name = "enable-realtek-rtl8191su-r8712u";
+      patch = null;
+      structuredExtraConfig = with lib.kernel; {
+        STAGING = yes;
+        R8712U = module;
+      };
+    }
+  ];
   boot.kernelModules = [ "r8712u" ];
 
   hardware.enableRedistributableFirmware = true;
