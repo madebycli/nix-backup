@@ -34,9 +34,19 @@
           unzip
           zstd
         ];
-        text = builtins.readFile ./scripts/backup.sh;
+        text = ''
+          source ${./scripts/backup-lib/00-core.sh}
+          source ${./scripts/backup-lib/10-metadata.sh}
+          source ${./scripts/backup-lib/20-git.sh}
+          source ${./scripts/backup-lib/30-run.sh}
+          main "$@"
+        '';
         checkPhase = ''
           ${pkgs.bash}/bin/bash -n "$target"
+          ${pkgs.bash}/bin/bash -n ${./scripts/backup-lib/00-core.sh}
+          ${pkgs.bash}/bin/bash -n ${./scripts/backup-lib/10-metadata.sh}
+          ${pkgs.bash}/bin/bash -n ${./scripts/backup-lib/20-git.sh}
+          ${pkgs.bash}/bin/bash -n ${./scripts/backup-lib/30-run.sh}
         '';
       };
 
