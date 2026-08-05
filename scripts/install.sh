@@ -7,6 +7,7 @@ readonly PROFILE="github-vault"
 readonly HARDWARE_SOURCE="/etc/nixos/hardware-configuration.nix"
 readonly TOKEN_TARGET="/var/lib/nix-backup/secrets/github-token"
 readonly ARM_FILE="/var/lib/nix-backup/armed"
+readonly WIFI_CONNECTION_NAME="nix-backup-wifi"
 
 CHECKOUT="/etc/nixos/nix-backup"
 TOKEN_SOURCE=""
@@ -15,6 +16,7 @@ WIFI_SSID=""
 WIFI_PASSWORD_FILE=""
 WIFI_INTERFACE=""
 AUTO_YES=false
+ARM_AFTER_INSTALL=true
 
 usage() {
   cat <<'USAGE'
@@ -24,18 +26,25 @@ Recommended command:
   nix run github:madebycli/nix-backup#install
 
 Options:
-  --checkout PATH    Configuration checkout. Default: /etc/nixos/nix-backup
-  --token-file PATH  Read the GitHub token from this file instead of prompting.
+  --checkout PATH       Configuration checkout. Default: /etc/nixos/nix-backup
+  --token-file PATH     Read the GitHub token from this file instead of prompting.
   --bios-disk PATH      GRUB installation disk for legacy BIOS, for example /dev/sda.
   --wifi-ssid SSID      Create/refresh a persistent NetworkManager Wi-Fi profile.
-  --wifi-password-file  File containing the Wi-Fi password (used with --wifi-ssid).
-  --wifi-interface IF   Optional wireless interface, for example wlp2s0.
+  --wifi-password-file PATH
+                        File containing the Wi-Fi password (used with --wifi-ssid).
+  --wifi-interface IF   Optionally bind the Wi-Fi profile to an interface.
+  --no-arm              Do not run backup/shutdown automatically on the next boot.
+                        Use this for the first Wi-Fi-only reboot test.
   --yes, -y             Build and switch without a confirmation prompt.
-  -h, --help         Show this help.
+  -h, --help            Show this help.
 
 On UEFI systems the installer configures systemd-boot automatically. On legacy
 BIOS systems --bios-disk is required. The currently generated NixOS hardware
-configuration is copied into the cloned repository before the rebuild.
+configuration and the existing SSH authorized_keys are preserved locally.
+
+Ethernet is configured as the preferred route (metric 100). Wi-Fi is configured
+as an automatic fallback (metric 600), so unplugging Ethernet makes Wi-Fi take
+over without changing the backup service.
 USAGE
 }
 
@@ -80,6 +89,10 @@ while (($#)); do
       WIFI_INTERFACE="$2"
       shift 2
       ;;
+    --no-arm)
+      ARM_AFTER_INSTALL=false
+      shift
+      ;;
     --yes|-y)
       AUTO_YES=true
       shift
@@ -98,9 +111,11 @@ done
 if [[ -n "$WIFI_SSID" ]]; then
   [[ -n "$WIFI_PASSWORD_FILE" ]] || die "--wifi-ssid requires --wifi-password-file"
   [[ -s "$WIFI_PASSWORD_FILE" ]] || die "Wi-Fi password file missing or empty: $WIFI_PASSWORD_FILE"
+  [[ "$WIFI_SSID" != *$'\n'* && "$WIFI_SSID" != *$'\r'* ]] || die "Wi-Fi SSID contains a newline"
 elif [[ -n "$WIFI_PASSWORD_FILE" || -n "$WIFI_INTERFACE" ]]; then
   die "Wi-Fi password/interface options require --wifi-ssid"
 fi
+
 for command in git gh nix nixos-rebuild; do
   command -v "$command" >/dev/null 2>&1 || die "required command missing: $command"
 done
@@ -205,8 +220,8 @@ printf '%s' "$token" > "$work_dir/github-token"
 rm -f "$work_dir/github-token"
 unset token
 
-# Prevent a newly enabled unit from starting during nixos-rebuild switch. The
-# appliance is armed only after the switch has completed successfully.
+# Prevent a newly enabled unit from starting during nixos-rebuild switch. It is
+# armed only after the switch, unless --no-arm was selected for a network test.
 "${SUDO[@]}" rm -f "$ARM_FILE"
 
 cd "$CHECKOUT"
@@ -234,35 +249,70 @@ if [[ -n "$WIFI_SSID" ]]; then
   command -v nmcli >/dev/null 2>&1 || die "nmcli is unavailable after the switch"
   wifi_password="$(tr -d '\r\n' < "$WIFI_PASSWORD_FILE")"
   [[ -n "$wifi_password" ]] || die "Wi-Fi password is empty"
-  log "Creating persistent NetworkManager profile for $WIFI_SSID"
-  nmcli_args=(device wifi connect "$WIFI_SSID" password "$wifi_password")
-  [[ -n "$WIFI_INTERFACE" ]] && nmcli_args+=(ifname "$WIFI_INTERFACE")
-  "${SUDO[@]}" nmcli "${nmcli_args[@]}"
-  active_wifi_interface="$WIFI_INTERFACE"
-  if [[ -z "$active_wifi_interface" ]]; then
-    active_wifi_interface="$("${SUDO[@]}" nmcli -t -f DEVICE,TYPE device | awk -F: '$2=="wifi" {print $1; exit}')"
-  fi
-  connection_name=""
-  if [[ -n "$active_wifi_interface" ]]; then
-    connection_name="$("${SUDO[@]}" nmcli -g GENERAL.CONNECTION device show "$active_wifi_interface" 2>/dev/null || true)"
-  fi
-  if [[ -n "$connection_name" && "$connection_name" != "--" ]]; then
-    "${SUDO[@]}" nmcli connection modify "$connection_name" connection.autoconnect yes
-  fi
+
+  log "Creating persistent Wi-Fi fallback profile for $WIFI_SSID"
+  "${SUDO[@]}" nmcli connection delete id "$WIFI_CONNECTION_NAME" >/dev/null 2>&1 || true
+
+  wifi_add=(
+    connection add
+    type wifi
+    con-name "$WIFI_CONNECTION_NAME"
+    ssid "$WIFI_SSID"
+  )
+  [[ -n "$WIFI_INTERFACE" ]] && wifi_add+=(ifname "$WIFI_INTERFACE")
+  "${SUDO[@]}" nmcli "${wifi_add[@]}"
+
+  "${SUDO[@]}" nmcli connection modify id "$WIFI_CONNECTION_NAME" \
+    connection.autoconnect yes \
+    connection.autoconnect-priority 0 \
+    802-11-wireless.mode infrastructure \
+    802-11-wireless.powersave 2 \
+    802-11-wireless-security.key-mgmt wpa-psk \
+    802-11-wireless-security.psk "$wifi_password" \
+    ipv4.method auto \
+    ipv4.route-metric 600 \
+    ipv6.method auto \
+    ipv6.route-metric 600
+
+  # Prefer every existing wired profile whenever a cable is connected. Wi-Fi
+  # remains connected/available and becomes the default route when LAN vanishes.
+  while IFS=: read -r wired_uuid wired_type; do
+    [[ "$wired_type" == "802-3-ethernet" ]] || continue
+    "${SUDO[@]}" nmcli connection modify uuid "$wired_uuid" \
+      connection.autoconnect yes \
+      ipv4.route-metric 100 \
+      ipv6.route-metric 100 || true
+  done < <("${SUDO[@]}" nmcli -t -f UUID,TYPE connection show)
+
+  "${SUDO[@]}" nmcli connection reload
+  "${SUDO[@]}" nmcli -f NAME,TYPE,AUTOCONNECT connection show id "$WIFI_CONNECTION_NAME"
   unset wifi_password
 fi
 
-log "Arming automatic backup for the next boot"
 "${SUDO[@]}" install -d -m 0700 /var/lib/nix-backup
-"${SUDO[@]}" touch "$ARM_FILE"
-"${SUDO[@]}" chmod 0600 "$ARM_FILE"
+if $ARM_AFTER_INSTALL; then
+  log "Arming automatic backup for the next boot"
+  "${SUDO[@]}" touch "$ARM_FILE"
+  "${SUDO[@]}" chmod 0600 "$ARM_FILE"
+else
+  log "Leaving automatic backup disarmed for the first network test"
+  "${SUDO[@]}" rm -f "$ARM_FILE"
+fi
 
 printf '\nInstallation complete.\n'
 printf 'Configuration: %s\n' "$CHECKOUT"
 printf 'Token: %s (root-only)\n' "$TOKEN_TARGET"
-printf 'The next boot will wait for the network, back up all discovered repositories,\n'
-printf 'write status JSON to madebycli/nix-backup, and power off.\n'
-printf '\nBefore testing unattended Wi-Fi, verify that NetworkManager has a saved autoconnect profile:\n'
-printf '  nmcli connection show\n'
-printf '\nManual backup test (this will power off when started through systemd):\n'
-printf '  sudo systemctl start github-backup.service\n'
+printf 'Configured kernel: Linux 6.6 with r8712u for USB device 13d3:3306.\n'
+if [[ -n "$WIFI_SSID" ]]; then
+  printf 'Wi-Fi profile: %s (fallback metric 600)\n' "$WIFI_CONNECTION_NAME"
+  printf 'Ethernet profiles: preferred metric 100\n'
+fi
+if $ARM_AFTER_INSTALL; then
+  printf 'The next boot will back up all discovered repositories and power off.\n'
+else
+  printf 'Automatic backup is DISARMED for testing. After Wi-Fi works, run:\n'
+  printf '  sudo install -m 0600 /dev/null %s\n' "$ARM_FILE"
+  printf 'Then reboot to perform the first automatic backup.\n'
+fi
+printf '\nThe r8712u driver is loaded only after rebooting into the Linux 6.6 kernel.\n'
+printf 'Keep Ethernet connected until the installation has completed successfully.\n'
