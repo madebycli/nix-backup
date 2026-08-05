@@ -6,6 +6,7 @@ readonly REPO_URL="https://github.com/madebycli/nix-backup.git"
 readonly TARGET_USER="xxxxx"
 readonly DEFAULT_CHECKOUT="/etc/nixos/nix-backup"
 readonly AUTHORIZED_KEYS_SOURCE="/home/${TARGET_USER}/.ssh/authorized_keys"
+readonly EXPECTED_WIFI_USB_ID="13d3:3306"
 
 CHECKOUT="$DEFAULT_CHECKOUT"
 args=("$@")
@@ -17,6 +18,25 @@ fail() {
 
 log() {
   printf '\n==> %s\n' "$*"
+}
+
+has_expected_wifi_adapter() {
+  local device vendor product
+
+  for device in /sys/bus/usb/devices/*; do
+    [[ -r "$device/idVendor" && -r "$device/idProduct" ]] || continue
+    vendor="$(tr '[:upper:]' '[:lower:]' < "$device/idVendor")"
+    product="$(tr '[:upper:]' '[:lower:]' < "$device/idProduct")"
+    [[ "${vendor}:${product}" == "$EXPECTED_WIFI_USB_ID" ]] && return 0
+  done
+
+  return 1
+}
+
+clone_checkout() {
+  log "Cloning configuration into $CHECKOUT before preserving SSH access"
+  "${SUDO[@]}" install -d -m 0755 "$(dirname "$CHECKOUT")"
+  "${SUDO[@]}" git clone "$REPO_URL" "$CHECKOUT"
 }
 
 # Read --checkout without consuming the arguments forwarded to install.sh.
@@ -33,6 +53,8 @@ id "$TARGET_USER" >/dev/null 2>&1 || fail "required user does not exist: $TARGET
   || fail "$AUTHORIZED_KEYS_SOURCE is missing or empty; install your PC SSH public key first"
 grep -Eq '^(ssh-(ed25519|rsa)|ecdsa-|sk-(ssh-|ecdsa-))' "$AUTHORIZED_KEYS_SOURCE" \
   || fail "$AUTHORIZED_KEYS_SOURCE contains no recognizable SSH public key"
+has_expected_wifi_adapter \
+  || fail "expected backup-server Wi-Fi adapter $EXPECTED_WIFI_USB_ID is not connected; refusing to install on the wrong machine"
 
 if [[ $EUID -eq 0 ]]; then
   SUDO=()
@@ -42,11 +64,12 @@ else
 fi
 
 if [[ ! -e "$CHECKOUT" ]]; then
-  log "Cloning configuration into $CHECKOUT before preserving SSH access"
-  "${SUDO[@]}" install -d -m 0755 "$(dirname "$CHECKOUT")"
-  "${SUDO[@]}" git clone "$REPO_URL" "$CHECKOUT"
+  clone_checkout
 elif [[ ! -d "$CHECKOUT/.git" ]]; then
-  fail "$CHECKOUT exists but is not a Git repository"
+  stale_checkout="${CHECKOUT}.incomplete-$(date +%Y%m%d-%H%M%S)"
+  log "Preserving incomplete checkout as $stale_checkout"
+  "${SUDO[@]}" mv "$CHECKOUT" "$stale_checkout"
+  clone_checkout
 else
   remote="$("${SUDO[@]}" git -C "$CHECKOUT" remote get-url origin 2>/dev/null || true)"
   [[ "$remote" == "$REPO_URL" || "$remote" == "git@github.com:madebycli/nix-backup.git" ]] \
