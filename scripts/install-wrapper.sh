@@ -19,10 +19,16 @@ log() {
   printf '\n==> %s\n' "$*"
 }
 
+make_checkout_readable() {
+  [[ -e "$CHECKOUT" ]] || return 0
+  "${SUDO[@]}" chmod -R u=rwX,go=rX "$CHECKOUT"
+}
+
 clone_checkout() {
   log "Cloning configuration into $CHECKOUT before preserving SSH access"
   "${SUDO[@]}" install -d -m 0755 "$(dirname "$CHECKOUT")"
   "${SUDO[@]}" git clone "$REPO_URL" "$CHECKOUT"
+  make_checkout_readable
 }
 
 # Read --checkout without consuming the arguments forwarded to install.sh.
@@ -47,6 +53,10 @@ else
   SUDO=(sudo)
 fi
 
+# Earlier interrupted runs may have created a root-owned checkout under umask
+# 077. Make it traversable before testing whether it is a Git repository.
+make_checkout_readable
+
 if [[ ! -e "$CHECKOUT" ]]; then
   clone_checkout
 elif [[ ! -d "$CHECKOUT/.git" ]]; then
@@ -61,6 +71,7 @@ else
 
   log "Refreshing existing installer checkout"
   "${SUDO[@]}" git -C "$CHECKOUT" pull --ff-only
+  make_checkout_readable
 fi
 
 readonly AUTHORIZED_KEYS_TARGET="$CHECKOUT/hosts/github-vault/authorized_keys"
@@ -80,7 +91,6 @@ log "Preserving SSH access for $TARGET_USER"
 "${SUDO[@]}" install -m 0644 "$AUTHORIZED_KEYS_SOURCE" "$AUTHORIZED_KEYS_TARGET"
 "${SUDO[@]}" git -C "$CHECKOUT" update-index --skip-worktree \
   "$AUTHORIZED_KEYS_REPO_PATH"
+make_checkout_readable
 
-# The checkout is intentionally created by root under a restrictive umask.
-# Run the installer as root as well so it can read and update that checkout.
-exec "${SUDO[@]}" bash "$CHECKOUT/scripts/install.sh" "${args[@]}"
+exec bash "$CHECKOUT/scripts/install.sh" "${args[@]}"
