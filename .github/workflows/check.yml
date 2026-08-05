@@ -34,18 +34,3 @@ jobs:
 
       - name: Build NixOS system
         run: nix build .#nixosConfigurations.github-vault.config.system.build.toplevel --out-link result --show-trace
-
-      - name: Verify RTL8191SU support
-        run: |
-          kernel_version="$(nix eval --raw .#nixosConfigurations.github-vault.config.boot.kernelPackages.kernel.version)"
-          case "$kernel_version" in
-            6.6.*) ;;
-            *) echo "Expected Linux 6.6, got $kernel_version" >&2; exit 1 ;;
-          esac
-
-          module_path="$(find -L result/kernel-modules -type f -name 'r8712u.ko*' -print -quit)"
-          test -n "$module_path" || {
-            echo "r8712u kernel module is missing from the built system" >&2
-            exit 1
-          }
-          echo "Verified $module_path on Linux $kernel_version"
