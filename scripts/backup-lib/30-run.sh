@@ -46,9 +46,9 @@ upload_status() {
   local result="$1"
   [[ -n "$STATUS_REPOSITORY" ]] || return 0
   put_status_file "status/history/${HOST_ID}/${TIMESTAMP}.json" \
-    "backup(${HOST_ID}): ${result} ${TIMESTAMP}"
+    "backup(${HOST_ID}): ${result} ${TIMESTAMP}" || return 1
   put_status_file "status/latest/${HOST_ID}.json" \
-    "backup(${HOST_ID}): update latest status"
+    "backup(${HOST_ID}): update latest status" || return 1
   STATUS_UPLOAD_OK=true
 }
 
