@@ -7,7 +7,7 @@ readonly PROFILE="github-vault"
 readonly HARDWARE_SOURCE="/etc/nixos/hardware-configuration.nix"
 readonly TOKEN_TARGET="/var/lib/nix-backup/secrets/github-token"
 readonly ARM_FILE="/var/lib/nix-backup/armed"
-readonly NIX_CONFIG_VALUE="experimental-features = nix-command flakes"
+readonly NIX_CONFIG_VALUE=$'experimental-features = nix-command flakes\n'
 
 CHECKOUT="/etc/nixos/nix-backup"
 TOKEN_SOURCE=""
@@ -28,12 +28,14 @@ Options:
   --bios-disk PATH      GRUB installation disk for legacy BIOS, for example /dev/sda.
   --no-arm              Do not run backup/shutdown automatically on the next boot.
                         Use this for the first Ethernet and SSH test.
-  --yes, -y             Build and switch without a confirmation prompt.
+  --yes, -y             Build and install without a confirmation prompt.
   -h, --help            Show this help.
 
 On UEFI systems the installer configures systemd-boot automatically. On legacy
 BIOS systems --bios-disk is required. The currently generated NixOS hardware
 configuration and the existing SSH authorized_keys are preserved locally.
+The appliance configuration is installed for the next boot rather than switched
+live, avoiding user-session service failures during an SSH installation.
 USAGE
 }
 
@@ -187,8 +189,8 @@ printf '%s' "$token" > "$work_dir/github-token"
 rm -f "$work_dir/github-token"
 unset token
 
-# Prevent a newly enabled unit from starting during nixos-rebuild switch. It is
-# armed only after the switch, unless --no-arm was selected for a network test.
+# Prevent the boot service from running until explicitly armed. With --no-arm
+# this remains absent for the first Ethernet and SSH test after reboot.
 "${SUDO[@]}" rm -f "$ARM_FILE"
 
 cd "$CHECKOUT"
@@ -199,20 +201,20 @@ log "Building NixOS profile $PROFILE"
   nixos-rebuild build --flake ".#${PROFILE}"
 
 if ! $AUTO_YES; then
-  printf '\nBuild successful. Activate the backup appliance configuration? [y/N] '
+  printf '\nBuild successful. Install the backup appliance configuration for the next boot? [y/N] '
   read -r answer
   case "$answer" in
     y|Y|yes|YES|j|J|ja|JA) ;;
     *)
-      printf 'No switch performed. Build result: %s/result\n' "$CHECKOUT"
+      printf 'No boot installation performed. Build result: %s/result\n' "$CHECKOUT"
       exit 0
       ;;
   esac
 fi
 
-log "Activating NixOS configuration"
+log "Installing NixOS configuration for the next boot"
 "${SUDO[@]}" env NIX_CONFIG="$NIX_CONFIG_VALUE" \
-  nixos-rebuild switch --flake ".#${PROFILE}"
+  nixos-rebuild boot --flake ".#${PROFILE}"
 
 "${SUDO[@]}" install -d -m 0700 /var/lib/nix-backup
 if $ARM_AFTER_INSTALL; then
@@ -231,8 +233,8 @@ printf 'Networking: Ethernet via NetworkManager.\n'
 if $ARM_AFTER_INSTALL; then
   printf 'The next boot will back up all discovered repositories and power off.\n'
 else
-  printf 'Automatic backup is DISARMED for testing. After Ethernet and SSH work, run:\n'
+  printf 'Automatic backup is DISARMED for testing. After reboot, Ethernet and SSH work, run:\n'
   printf '  sudo install -m 0600 /dev/null %s\n' "$ARM_FILE"
-  printf 'Then reboot to perform the first automatic backup.\n'
+  printf 'Then reboot again to perform the first automatic backup.\n'
 fi
 printf '\nKeep Ethernet connected whenever the backup machine is started.\n'
