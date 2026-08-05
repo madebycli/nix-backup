@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 
 {
   imports = [
@@ -8,7 +8,12 @@
   ];
 
   networking.hostName = "github-vault";
-  networking.networkmanager.enable = true;
+  networking.networkmanager = {
+    enable = true;
+    # The legacy r8712u driver uses Wireless Extensions; wpa_supplicant is the
+    # most compatible NetworkManager backend for this adapter.
+    wifi.backend = "wpa_supplicant";
+  };
   networking.firewall.enable = true;
 
   users.users.xxxxx = {
@@ -56,7 +61,16 @@
   '';
 
   services.fstrim.enable = true;
+
+  # USB device 13d3:3306 is a Realtek RTL8191SU. Its in-tree r8712u staging
+  # driver still exists in Linux 6.6 but was removed from later 6.12 updates.
+  # Keep this appliance on the supported 6.6 LTS kernel while this adapter is
+  # in use. Ethernet remains available and is preferred by route metric.
+  boot.kernelPackages = pkgs.linuxPackages_6_6;
+  boot.kernelModules = [ "r8712u" ];
+
   hardware.enableRedistributableFirmware = true;
+  hardware.firmware = [ pkgs.linux-firmware ];
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
   nix = {
