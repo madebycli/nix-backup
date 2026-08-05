@@ -89,6 +89,7 @@
         name = "nix-backup-install";
         inheritPath = true;
         runtimeInputs = with pkgs; [
+          bash
           coreutils
           findutils
           gawk
@@ -102,7 +103,30 @@
           nixos-rebuild
           util-linux
         ];
-        text = builtins.readFile ./scripts/install.sh;
+        text = builtins.readFile ./scripts/install-wrapper.sh;
+        checkPhase = ''
+          ${pkgs.bash}/bin/bash -n "$target"
+          ${pkgs.bash}/bin/bash -n ${./scripts/install.sh}
+        '';
+      };
+
+      wifiDiagnoseProgram = pkgs.writeShellApplication {
+        name = "nix-backup-wifi-diagnose";
+        inheritPath = true;
+        runtimeInputs = with pkgs; [
+          bash
+          coreutils
+          gnugrep
+          iproute2
+          iw
+          kmod
+          networkmanager
+          pciutils
+          rfkill
+          systemd
+          usbutils
+        ];
+        text = builtins.readFile ./scripts/wifi-diagnose.sh;
         checkPhase = ''
           ${pkgs.bash}/bin/bash -n "$target"
         '';
@@ -123,6 +147,7 @@
         restore = restoreProgram;
         update = updateProgram;
         install = installProgram;
+        wifi-diagnose = wifiDiagnoseProgram;
       };
 
       apps.${system} = {
@@ -145,6 +170,10 @@
         install = {
           type = "app";
           program = "${installProgram}/bin/nix-backup-install";
+        };
+        wifi-diagnose = {
+          type = "app";
+          program = "${wifiDiagnoseProgram}/bin/nix-backup-wifi-diagnose";
         };
       };
 
