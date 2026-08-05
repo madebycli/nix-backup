@@ -10,7 +10,7 @@ let
     owner = "gregkh";
     repo = "linux";
     rev = "2b9719ccad38dffad7dbdd2f39896f723f9b9011";
-    hash = "sha256-jcYe540LHHAqgNRTWDuUac1AcglsW78Ps3SYyH6mLIE=";
+    hash = "sha256-zZKDLUqGYs0R/Ceb2JfN8QiEaCNKZML4rJMplhAOcmU=";
   };
 
   r8712uModule = pkgs.stdenv.mkDerivation {
