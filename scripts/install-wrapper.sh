@@ -81,4 +81,6 @@ log "Preserving SSH access for $TARGET_USER"
 "${SUDO[@]}" git -C "$CHECKOUT" update-index --skip-worktree \
   "$AUTHORIZED_KEYS_REPO_PATH"
 
-exec bash "$CHECKOUT/scripts/install.sh" "${args[@]}"
+# The checkout is intentionally created by root under a restrictive umask.
+# Run the installer as root as well so it can read and update that checkout.
+exec "${SUDO[@]}" bash "$CHECKOUT/scripts/install.sh" "${args[@]}"
