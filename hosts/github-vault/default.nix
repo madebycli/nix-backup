@@ -1,5 +1,50 @@
 { config, lib, pkgs, ... }:
 
+let
+  kernelPackages = pkgs.linuxPackages_6_6;
+  kernel = kernelPackages.kernel;
+
+  # Last linux-6.6.y source revision immediately before stable commit
+  # f12f4c657617 removed drivers/staging/rtl8712 on 2025-12-06.
+  r8712uSource = pkgs.fetchFromGitHub {
+    owner = "gregkh";
+    repo = "linux";
+    rev = "2b9719ccad38dffad7dbdd2f39896f723f9b9011";
+    hash = lib.fakeHash;
+  };
+
+  r8712uModule = pkgs.stdenv.mkDerivation {
+    pname = "r8712u";
+    version = "6.6-pre-removal-2b9719c";
+    src = r8712uSource;
+    sourceRoot = "source/drivers/staging/rtl8712";
+
+    nativeBuildInputs = kernel.moduleBuildDependencies;
+    hardeningDisable = [ "pic" ];
+
+    buildPhase = ''
+      runHook preBuild
+      make -C "${kernel.dev}/lib/modules/${kernel.modDirVersion}/build" \
+        M="$PWD" \
+        CONFIG_R8712U=m \
+        modules
+      runHook postBuild
+    '';
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm0644 r8712u.ko \
+        "$out/lib/modules/${kernel.modDirVersion}/extra/r8712u.ko"
+      runHook postInstall
+    '';
+
+    meta = {
+      description = "Legacy Realtek RTL8712U/RTL8192SU USB Wi-Fi driver for Linux 6.6";
+      license = lib.licenses.gpl2Only;
+      platforms = lib.platforms.linux;
+    };
+  };
+in
 {
   imports = [
     ./hardware-configuration.nix
@@ -62,21 +107,10 @@
 
   services.fstrim.enable = true;
 
-  # USB device 13d3:3306 is a Realtek RTL8191SU. Its in-tree r8712u driver
-  # exists in Linux 6.6, but NixOS disables staging drivers in its stock kernel
-  # configuration. Build Linux 6.6 with only this staging driver enabled.
-  # Ethernet remains preferred through NetworkManager route metrics.
-  boot.kernelPackages = pkgs.linuxPackages_6_6;
-  boot.kernelPatches = [
-    {
-      name = "enable-realtek-rtl8191su-r8712u";
-      patch = null;
-      structuredExtraConfig = with lib.kernel; {
-        STAGING = yes;
-        R8712U = module;
-      };
-    }
-  ];
+  # Keep the current Linux 6.6 LTS kernel and add only the removed driver as a
+  # separately built module. This retains current 6.6 security updates.
+  boot.kernelPackages = kernelPackages;
+  boot.extraModulePackages = [ r8712uModule ];
   boot.kernelModules = [ "r8712u" ];
 
   hardware.enableRedistributableFirmware = true;
