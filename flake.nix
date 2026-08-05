@@ -91,12 +91,14 @@
         runtimeInputs = with pkgs; [
           coreutils
           findutils
+          gawk
           git
           gh
           gnugrep
           gnused
           jq
           nix
+          networkmanager
           nixos-rebuild
           util-linux
         ];
