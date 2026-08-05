@@ -1,0 +1,2 @@
+# The installer replaces this machine-local placeholder with
+# /home/xxxxx/.ssh/authorized_keys before the first NixOS switch.
