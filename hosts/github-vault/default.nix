@@ -35,10 +35,19 @@
     networkWaitSeconds = 600;
     shutdownAfterBackup = true;
     shutdownOnFailure = true;
+
+    # A successful internal-disk backup is mirrored to this dedicated ext4
+    # drive when it is attached. Unrelated USB drives are never touched.
+    usbCopy = {
+      enable = true;
+      label = "NIX_BACKUP";
+      mountPoint = "/mnt/nix-backup-usb";
+      destination = "github-vault";
+    };
   };
 
   # SSH is key-only. The installer copies the existing authorized_keys file
-  # for user xxxxx into the machine-local placeholder before the first switch.
+  # for user xxxxx into the machine-local placeholder before the first boot.
   services.openssh = {
     enable = true;
     openFirewall = true;
