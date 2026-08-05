@@ -129,5 +129,6 @@ in
   i18n.defaultLocale = "de_DE.UTF-8";
   console.keyMap = "de";
 
-  system.stateVersion = "26.05";
+  # Preserve the compatibility baseline of the existing NixOS 25.11 install.
+  system.stateVersion = "25.11";
 }
