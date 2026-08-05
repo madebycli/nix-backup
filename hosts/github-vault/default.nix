@@ -11,6 +11,15 @@
   networking.networkmanager.enable = true;
   networking.firewall.enable = true;
 
+  users.users.xxxxx = {
+    isNormalUser = true;
+    description = "Backup server administrator";
+    home = "/home/xxxxx";
+    createHome = true;
+    extraGroups = [ "wheel" "networkmanager" ];
+    openssh.authorizedKeys.keyFiles = [ ./authorized_keys ];
+  };
+
   services.githubBackup = {
     enable = true;
     owner = "madebycli";
@@ -28,15 +37,15 @@
     shutdownOnFailure = true;
   };
 
-  # SSH is available for diagnosis, but password and keyboard-interactive login
-  # are disabled. Add an authorized key for an existing user before relying on it.
+  # SSH is key-only. The installer copies the existing authorized_keys file
+  # for user xxxxx into the machine-local placeholder before the first switch.
   services.openssh = {
     enable = true;
     openFirewall = true;
     settings = {
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
-      PermitRootLogin = "prohibit-password";
+      PermitRootLogin = "no";
     };
   };
 
