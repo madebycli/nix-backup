@@ -7,6 +7,7 @@ readonly PROFILE="github-vault"
 readonly HARDWARE_SOURCE="/etc/nixos/hardware-configuration.nix"
 readonly TOKEN_TARGET="/var/lib/nix-backup/secrets/github-token"
 readonly ARM_FILE="/var/lib/nix-backup/armed"
+readonly NIX_CONFIG_VALUE="experimental-features = nix-command flakes"
 
 CHECKOUT="/etc/nixos/nix-backup"
 TOKEN_SOURCE=""
@@ -192,9 +193,10 @@ unset token
 
 cd "$CHECKOUT"
 log "Checking the flake"
-"${SUDO[@]}" nix flake check --no-build
+"${SUDO[@]}" env NIX_CONFIG="$NIX_CONFIG_VALUE" nix flake check --no-build
 log "Building NixOS profile $PROFILE"
-"${SUDO[@]}" nixos-rebuild build --flake ".#${PROFILE}"
+"${SUDO[@]}" env NIX_CONFIG="$NIX_CONFIG_VALUE" \
+  nixos-rebuild build --flake ".#${PROFILE}"
 
 if ! $AUTO_YES; then
   printf '\nBuild successful. Activate the backup appliance configuration? [y/N] '
@@ -209,7 +211,8 @@ if ! $AUTO_YES; then
 fi
 
 log "Activating NixOS configuration"
-"${SUDO[@]}" nixos-rebuild switch --flake ".#${PROFILE}"
+"${SUDO[@]}" env NIX_CONFIG="$NIX_CONFIG_VALUE" \
+  nixos-rebuild switch --flake ".#${PROFILE}"
 
 "${SUDO[@]}" install -d -m 0700 /var/lib/nix-backup
 if $ARM_AFTER_INSTALL; then
