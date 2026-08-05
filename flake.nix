@@ -122,9 +122,9 @@
           kmod
           networkmanager
           pciutils
-          rfkill
           systemd
           usbutils
+          util-linux
         ];
         text = builtins.readFile ./scripts/wifi-diagnose.sh;
         checkPhase = ''
