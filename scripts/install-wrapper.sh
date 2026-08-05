@@ -66,19 +66,17 @@ fi
 readonly AUTHORIZED_KEYS_TARGET="$CHECKOUT/hosts/github-vault/authorized_keys"
 readonly AUTHORIZED_KEYS_REPO_PATH="hosts/github-vault/authorized_keys"
 
-# A previously interrupted or stale checkout can be missing the working-tree
-# copy even though the placeholder is tracked in HEAD. Restore it before the
-# real key is copied. This does not touch any machine-specific key content.
-if [[ ! -f "$AUTHORIZED_KEYS_TARGET" ]] \
-  && "${SUDO[@]}" git -C "$CHECKOUT" cat-file -e "HEAD:${AUTHORIZED_KEYS_REPO_PATH}" 2>/dev/null; then
-  log "Restoring missing authorized_keys placeholder from the repository"
-  "${SUDO[@]}" git -C "$CHECKOUT" restore --source=HEAD -- "$AUTHORIZED_KEYS_REPO_PATH"
-fi
-
-[[ -f "$AUTHORIZED_KEYS_TARGET" ]] \
-  || fail "authorized_keys placeholder is missing after refresh: $AUTHORIZED_KEYS_TARGET"
+# Nix flakes include only paths tracked by Git. Verify that the placeholder is
+# present in HEAD, but do not depend on its working-tree copy: some Git setups
+# can suppress that copy through index flags. Install the real key directly.
+"${SUDO[@]}" git -C "$CHECKOUT" cat-file -e \
+  "HEAD:${AUTHORIZED_KEYS_REPO_PATH}" 2>/dev/null \
+  || fail "authorized_keys path is not tracked in the repository: $AUTHORIZED_KEYS_REPO_PATH"
 
 log "Preserving SSH access for $TARGET_USER"
+"${SUDO[@]}" install -d -m 0755 "$(dirname "$AUTHORIZED_KEYS_TARGET")"
+"${SUDO[@]}" git -C "$CHECKOUT" update-index --no-skip-worktree \
+  "$AUTHORIZED_KEYS_REPO_PATH" 2>/dev/null || true
 "${SUDO[@]}" install -m 0644 "$AUTHORIZED_KEYS_SOURCE" "$AUTHORIZED_KEYS_TARGET"
 "${SUDO[@]}" git -C "$CHECKOUT" update-index --skip-worktree \
   "$AUTHORIZED_KEYS_REPO_PATH"
