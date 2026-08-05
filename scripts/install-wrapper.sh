@@ -47,15 +47,33 @@ if [[ ! -e "$CHECKOUT" ]]; then
   "${SUDO[@]}" git clone "$REPO_URL" "$CHECKOUT"
 elif [[ ! -d "$CHECKOUT/.git" ]]; then
   fail "$CHECKOUT exists but is not a Git repository"
+else
+  remote="$("${SUDO[@]}" git -C "$CHECKOUT" remote get-url origin 2>/dev/null || true)"
+  [[ "$remote" == "$REPO_URL" || "$remote" == "git@github.com:madebycli/nix-backup.git" ]] \
+    || fail "unexpected origin remote: $remote"
+
+  log "Refreshing existing installer checkout"
+  "${SUDO[@]}" git -C "$CHECKOUT" pull --ff-only
 fi
 
 readonly AUTHORIZED_KEYS_TARGET="$CHECKOUT/hosts/github-vault/authorized_keys"
+readonly AUTHORIZED_KEYS_REPO_PATH="hosts/github-vault/authorized_keys"
+
+# A previously interrupted or stale checkout can be missing the working-tree
+# copy even though the placeholder is tracked in HEAD. Restore it before the
+# real key is copied. This does not touch any machine-specific key content.
+if [[ ! -f "$AUTHORIZED_KEYS_TARGET" ]] \
+  && "${SUDO[@]}" git -C "$CHECKOUT" cat-file -e "HEAD:${AUTHORIZED_KEYS_REPO_PATH}" 2>/dev/null; then
+  log "Restoring missing authorized_keys placeholder from the repository"
+  "${SUDO[@]}" git -C "$CHECKOUT" restore --source=HEAD -- "$AUTHORIZED_KEYS_REPO_PATH"
+fi
+
 [[ -f "$AUTHORIZED_KEYS_TARGET" ]] \
-  || fail "authorized_keys placeholder is missing: $AUTHORIZED_KEYS_TARGET"
+  || fail "authorized_keys placeholder is missing after refresh: $AUTHORIZED_KEYS_TARGET"
 
 log "Preserving SSH access for $TARGET_USER"
 "${SUDO[@]}" install -m 0644 "$AUTHORIZED_KEYS_SOURCE" "$AUTHORIZED_KEYS_TARGET"
 "${SUDO[@]}" git -C "$CHECKOUT" update-index --skip-worktree \
-  hosts/github-vault/authorized_keys
+  "$AUTHORIZED_KEYS_REPO_PATH"
 
 exec bash "$CHECKOUT/scripts/install.sh" "${args[@]}"
