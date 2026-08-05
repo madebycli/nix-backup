@@ -80,7 +80,7 @@ export_actions() {
     [[ -n "$run_id" ]] || continue
     api_optional_object "/repos/${full_name}/actions/runs/${run_id}" \
       "$metadata_dir/actions/runs/${run_id}.json" "$full_name workflow run $run_id"
-    api_optional_array "/repos/${full_name}/actions/runs/${run_id}/jobs?filter=all&per_page=100" \
+    api_optional_field_array "/repos/${full_name}/actions/runs/${run_id}/jobs?filter=all&per_page=100" jobs \
       "$metadata_dir/actions/runs/${run_id}-jobs.json" "$full_name workflow jobs $run_id"
     if bool_is_true "$INCLUDE_ACTION_LOGS"; then
       gh api "/repos/${full_name}/actions/runs/${run_id}/logs" \
@@ -141,7 +141,7 @@ export_rulesets_and_environments() {
     encoded="$(jq -rn --arg value "$name" '$value|@uri')"
     api_optional_object "/repos/${full_name}/environments/${encoded}" \
       "$metadata_dir/environments/$(safe_asset_name "$name").json" "$full_name environment $name"
-    api_optional_array "/repos/${full_name}/environments/${encoded}/deployment-branch-policies?per_page=100" \
+    api_optional_field_array "/repos/${full_name}/environments/${encoded}/deployment-branch-policies?per_page=100" branch_policies \
       "$metadata_dir/environments/$(safe_asset_name "$name")-branch-policies.json" \
       "$full_name environment branch policies $name"
   done
