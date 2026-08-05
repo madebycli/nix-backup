@@ -149,7 +149,8 @@ restore_mirror="$work_dir/restore.git"
 if [[ -f "$SNAPSHOT/git/repository.bundle.zst" ]]; then
   log "Decompressing Git bundle"
   zstd -d -q "$SNAPSHOT/git/repository.bundle.zst" -o "$work_dir/repository.bundle"
-  git bundle verify "$work_dir/repository.bundle"
+  git init --bare -q "$work_dir/verify.git"
+  git -C "$work_dir/verify.git" bundle verify "$work_dir/repository.bundle"
   git clone --mirror "$work_dir/repository.bundle" "$restore_mirror"
 elif [[ -f "$SNAPSHOT/git/empty-mirror.tar.zst" ]]; then
   log "Restoring empty repository mirror"
